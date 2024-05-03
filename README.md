@@ -325,8 +325,10 @@ cordova.plugins.health.query({
 - filterOutUserInput: optional, if true, filters out user-entered activities (iOS only)
 - includeCalories: optional, used only for dataType "activity". When querying, for each activity, also the active calories (in kcal) will be added. ***Warning*** the app requires access to calories.active to be granted
 - includeDistance: optional, used only for dataType "activity". When querying, for each activity, also the distance, run or cycled, (in m) will be added. ***Warning*** the app requires access to distance to be granted
+- bundleIds: optional, Android only - Filter data for only apps with the specified bundle ids 
 - successCallback: called if all OK, argument contains the result of the query in the form of an array of: { startDate: Date, endDate: Date, value: xxx, unit: 'xxx', sourceName: 'aaaa', sourceBundleId: 'bbbb' }
 - errorCallback: called if something went wrong, argument contains a textual description of the problem
+
 
 #### iOS quirks
 
