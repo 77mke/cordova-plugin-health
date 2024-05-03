@@ -449,7 +449,20 @@ public class HealthPlugin extends CordovaPlugin {
 
 
             TimeRangeFilter timeRange = TimeRangeFilter.between(Instant.ofEpochMilli(st), Instant.ofEpochMilli(et));
+
             HashSet<DataOrigin> dor = new HashSet<>();
+
+            // Add any specified bundleIds to the query
+            boolean hasBundleIds = args.getJSONObject(0).has("bundleIds");
+            if (hasBundleIds) {
+                JSONArray bundleIds = args.getJSONObject(0).getJSONArray("bundleIds");
+                for (int i = 0; i < bundleIds.length(); i++) {
+                    String bundleId = bundleIds.getString(i);
+                    DataOrigin dor = new DataOrigin(bundleId);
+                    dor.add(dor);
+                }
+            }
+
             ReadRecordsRequest request = new ReadRecordsRequest(dt, timeRange, dor, ascending, limit, null);
             // see https://kt.academy/article/cc-other-languages
             ReadRecordsResponse response = BuildersKt.runBlocking(
@@ -591,6 +604,17 @@ public class HealthPlugin extends CordovaPlugin {
             boolean hasbucket = args.getJSONObject(0).has("bucket");
 
             HashSet<DataOrigin> dor = new HashSet<>();
+
+            // Add any specified bundleIds to the query
+            boolean hasBundleIds = args.getJSONObject(0).has("bundleIds");
+            if (hasBundleIds) {
+                JSONArray bundleIds = args.getJSONObject(0).getJSONArray("bundleIds");
+                for (int i = 0; i < bundleIds.length(); i++) {
+                    String bundleId = bundleIds.getString(i);
+                    DataOrigin dor = new DataOrigin(bundleId);
+                    dor.add(dor);
+                }
+            }
 
             if (hasbucket) {
                 String bucketType = args.getJSONObject(0).getString("bucket");
