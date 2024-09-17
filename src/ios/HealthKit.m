@@ -144,6 +144,23 @@ static NSString *const HKPluginKeyUUID = @"UUID";
 }
 
 /**
+ * Get a NSDate representation of a string
+ *
+ * @param dateString  *NSString
+ * @return      *NSDate
+ */
++ (NSDate *)dateFromString:(NSString *)dateString {
+    __strong static NSISO8601DateFormatter *formatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        formatter = [[NSISO8601DateFormatter alloc] init];
+        formatter.formatOptions = NSISO8601DateFormatWithFractionalSeconds | NSISO8601DateFormatWithInternetDateTime;
+    });
+
+    return [formatter dateFromString:dateString];
+}
+
+/**
  * Get a HealthKit unit and make sure its local representation matches what is expected
  *
  * @param type      *NSString
@@ -784,10 +801,10 @@ static NSString *const HKPluginKeyUUID = @"UUID";
                                                                                             endDate:endDate];
                         }
                          NSArray *samples = nil;
-                         if (energy != nil &&  distance != nil) { 
+                         if (energy != nil &&  distance != nil) {
                             // both distance and energy
                             samples = @[sampleDistance, sampleCalories];
-                         } else if (energy != nil &&  distance == nil) { 
+                         } else if (energy != nil &&  distance == nil) {
                             // only energy
                             samples = @[sampleCalories];
                          } else if (energy == nil &&  distance != nil) {
@@ -832,18 +849,33 @@ static NSString *const HKPluginKeyUUID = @"UUID";
  */
 - (void)findWorkouts:(CDVInvokedUrlCommand *)command {
     NSMutableDictionary *args = command.arguments[0];
-    NSPredicate *workoutPredicate = nil;
+
+    NSDate* startDate = nil;
+    NSDate* endDate = nil;
+
+    if (args[@"startDate"] != nil)  {
+       startDate = [HealthKit dateFromString:args[@"startDate"]];
+    }
+    if (args[@"endDate"] != nil)  {
+        endDate = [HealthKit dateFromString:args[@"endDate"]];
+    }
+
+    NSPredicate *workoutPredicate = [HKQuery predicateForSamplesWithStartDate:startDate endDate:endDate options:HKQueryOptionStrictStartDate];
     // TODO if a specific workouttype was passed, use that
     //  if (false) {
     //    workoutPredicate = [HKQuery predicateForWorkoutsWithWorkoutActivityType:HKWorkoutActivityTypeCycling];
     //  }
 
+
+
     BOOL *includeCalories = (args[@"includeCalories"] != nil && [args[@"includeCalories"] boolValue]);
     BOOL *includeDistance = (args[@"includeDistance"] != nil && [args[@"includeDistance"] boolValue]);
 
     
+    dispatch_queue_t queue = dispatch_queue_create("findWorkoutsQueue", 0);
 
-    NSSet *types = [NSSet setWithObjects:[HKWorkoutType workoutType], nil];
+
+    NSSet *types = [NSSet setWithObjects:[HKWorkoutType activitySummaryType], nil];
     [[HealthKit sharedHealthStore] requestAuthorizationToShareTypes:nil readTypes:types completion:^(BOOL success, NSError *error) {
         __block HealthKit *bSelf = self;
         if (!success) {
@@ -851,8 +883,6 @@ static NSString *const HKPluginKeyUUID = @"UUID";
                 [HealthKit triggerErrorCallbackWithMessage:error.localizedDescription command:command delegate:bSelf.commandDelegate];
             });
         } else {
-
-
             HKSampleQuery *query = [[HKSampleQuery alloc] initWithSampleType:[HKWorkoutType workoutType] predicate:workoutPredicate limit:HKObjectQueryNoLimit sortDescriptors:nil resultsHandler:^(HKSampleQuery *sampleQuery, NSArray *results, NSError *innerError) {
                 if (innerError) {
                     dispatch_sync(dispatch_get_main_queue(), ^{
@@ -862,50 +892,101 @@ static NSString *const HKPluginKeyUUID = @"UUID";
                     NSMutableArray *finalResults = [[NSMutableArray alloc] initWithCapacity:results.count];
 
                     for (HKWorkout *workout in results) {
-                        NSString *workoutActivity = [WorkoutActivityConversion convertHKWorkoutActivityTypeToString:workout.workoutActivityType];
+                        dispatch_async(queue, ^{
+                            NSString *workoutActivity = [WorkoutActivityConversion convertHKWorkoutActivityTypeToString:workout.workoutActivityType];
+                            // iOS 9 moves the source property to a collection of revisions
+                            HKSource *source = nil;
+                            if ([workout respondsToSelector:@selector(sourceRevision)]) {
+                                source = [[workout valueForKey:@"sourceRevision"] valueForKey:@"source"];
+                            } else {
+                                //@TODO Update deprecated API call
+                                source = workout.source;
+                            }
+                            NSMutableDictionary *entry;
+                            entry = [
+                                    @{
+                                            @"duration": @(workout.duration),
+                                            HKPluginKeyStartDate: [HealthKit stringFromDate:workout.startDate],
+                                            HKPluginKeyEndDate: [HealthKit stringFromDate:workout.endDate],
+                                            HKPluginKeySourceBundleId: source.bundleIdentifier,
+                                            HKPluginKeySourceName: source.name,
+                                            @"activityType": workoutActivity,
+                                            @"UUID": [workout.UUID UUIDString]
+                                    } mutableCopy
+                                ];
 
-                        // iOS 9 moves the source property to a collection of revisions
-                        HKSource *source = nil;
-                        if ([workout respondsToSelector:@selector(sourceRevision)]) {
-                            source = [[workout valueForKey:@"sourceRevision"] valueForKey:@"source"];
-                        } else {
-                            //@TODO Update deprecated API call
-                            source = workout.source;
-                        }
-                        NSMutableDictionary *entry;
-                        entry = [
-                                @{
-                                        @"duration": @(workout.duration),
-                                        HKPluginKeyStartDate: [HealthKit stringFromDate:workout.startDate],
-                                        HKPluginKeyEndDate: [HealthKit stringFromDate:workout.endDate],
-                                        HKPluginKeySourceBundleId: source.bundleIdentifier,
-                                        HKPluginKeySourceName: source.name,
-                                        @"activityType": workoutActivity,
-                                        @"UUID": [workout.UUID UUIDString]
-                                } mutableCopy
-                            ];
+                            if(includeCalories != nil && includeCalories) {
+                                // Parse totalEnergyBurned in kilocalories
+                                double cals = [workout.totalEnergyBurned doubleValueForUnit:[HKUnit kilocalorieUnit]];
+                                NSString *calories = [[NSNumber numberWithDouble:cals] stringValue];
 
-                        if(includeCalories != nil && includeCalories) {
-                            // Parse totalEnergyBurned in kilocalories
-                            double cals = [workout.totalEnergyBurned doubleValueForUnit:[HKUnit kilocalorieUnit]];
-                            NSString *calories = [[NSNumber numberWithDouble:cals] stringValue];
+                                entry[@"energy"] = calories;
+                            }
+                            if(includeDistance != nil && includeDistance) {
 
-                            entry[@"energy"] = calories;
-                        }
-                        if(includeDistance != nil && includeDistance) {
-                            double meters = [workout.totalDistance doubleValueForUnit:[HKUnit meterUnit]];
-                            NSString *metersString = [NSString stringWithFormat:@"%ld", (long) meters];
+                                __block double meters = [workout.totalDistance doubleValueForUnit:[HKUnit meterUnit]];
+                                if (meters <= 0) {
+                                    // Might have to query the workout's related samples if the totalDistance is not accessible
+                                    // This is common with indoor cycling and rowing
 
-                            entry[@"distance"] = metersString;
-                        }
+                                    HKQuantityTypeIdentifier sampleType = nil;
 
-                        [finalResults addObject:entry];
+                                    switch (workout.workoutActivityType) {
+
+                                        case HKWorkoutActivityTypeCycling:
+                                            sampleType = HKQuantityTypeIdentifierDistanceCycling;
+                                            break;
+                                        case HKWorkoutActivityTypeRowing:
+                                            sampleType = HKQuantityTypeIdentifierDistanceWalkingRunning;
+                                            break;
+                                        default:
+                                            sampleType = nil;
+                                    }
+                                    
+                                    if (sampleType != nil) {
+                                        dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+
+                                        NSPredicate *subPredicate = [HKQuery predicateForObjectsFromWorkout:workout];
+                                        
+                                        HKSampleQuery *subQuery = [[HKSampleQuery alloc] initWithSampleType:[HKSampleType quantityTypeForIdentifier:sampleType] predicate:subPredicate limit:HKObjectQueryNoLimit sortDescriptors:nil resultsHandler:^(HKSampleQuery *subSampleQuery, NSArray *subResults, NSError *subError) {
+                                            
+                                            @autoreleasepool {
+                                                if (subError) {
+                                                    dispatch_sync(dispatch_get_main_queue(), ^{
+                                                        [HealthKit triggerErrorCallbackWithMessage:innerError.localizedDescription command:command delegate:bSelf.commandDelegate];
+                                                    });
+                                                } else {
+                                                    for (HKQuantitySample *sample in subResults) {
+                                                        meters += [sample.quantity doubleValueForUnit: [HKUnit meterUnit]];
+                                                    }
+
+                                                    dispatch_semaphore_signal(sema);
+                                                }
+                                            }
+                
+                                        }];
+
+                                        [[HealthKit sharedHealthStore] executeQuery:subQuery];
+
+                                        dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
+                                    }
+                                }
+
+                                NSString *metersString = [NSString stringWithFormat:@"%ld", (long) meters];
+                                entry[@"distance"] = metersString;
+                            }
+
+                            [finalResults addObject:entry];
+                        });
+
                     }
 
-                    dispatch_sync(dispatch_get_main_queue(), ^{
+                    dispatch_async(queue, ^{
                         CDVPluginResult *result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:finalResults];
                         [bSelf.commandDelegate sendPluginResult:result callbackId:command.callbackId];
                     });
+
+                  
                 }
             }];
             [[HealthKit sharedHealthStore] executeQuery:query];
