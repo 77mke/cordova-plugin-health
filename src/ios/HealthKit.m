@@ -936,8 +936,14 @@ static NSString *const HKPluginKeyUUID = @"UUID";
                                         case HKWorkoutActivityTypeCycling:
                                             sampleType = HKQuantityTypeIdentifierDistanceCycling;
                                             break;
+                                        case HKWorkoutActivityTypeWalking:
+                                        case HKWorkoutActivityTypeRunning:
                                         case HKWorkoutActivityTypeRowing:
                                             sampleType = HKQuantityTypeIdentifierDistanceWalkingRunning;
+                                            break;
+                                        case HKWorkoutActivityTypeWheelchairWalkPace:
+                                        case HKWorkoutActivityTypeWheelchairRunPace:
+                                            sampleType = HKQuantityTypeIdentifierDistanceWheelchair;
                                             break;
                                         default:
                                             sampleType = nil;
