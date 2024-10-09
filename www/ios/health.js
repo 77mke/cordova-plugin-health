@@ -125,6 +125,7 @@ var getHKDataTypes = function (dtArr) {
         HKDataTypes.push('HKQuantityTypeIdentifierBloodPressureDiastolic');
       } else if (dataTypes[dtArr[i]]) {
         HKDataTypes.push(dataTypes[dtArr[i]]);
+        if (dtArr[i] === 'activity') HKDataTypes.push('HKActivitySummaryType');
         if (dtArr[i] === 'distance') HKDataTypes.push('HKQuantityTypeIdentifierDistanceCycling');
         if (dtArr[i] === 'calories') HKDataTypes.push('HKQuantityTypeIdentifierBasalEnergyBurned');
       } else {

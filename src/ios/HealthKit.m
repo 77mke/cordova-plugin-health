@@ -612,6 +612,8 @@ static NSString *const HKPluginKeyUUID = @"UUID";
 
         if ([elem isEqual:@"HKWorkoutTypeIdentifier"]) {
             type = [HKObjectType workoutType];
+        } else if ([elem isEqual:@"HKActivitySummaryType"]) {
+            type = [HKObjectType activitySummaryType];
         } else if ([elem isEqual:@"HKWorkoutRouteType"]) {
             type = [HKSeriesType workoutRouteType];
         } else {
